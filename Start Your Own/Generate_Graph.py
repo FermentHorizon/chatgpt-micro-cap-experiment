@@ -1,8 +1,9 @@
-"""Plot ChatGPT portfolio performance against the S&P 500.
 
-The script loads logged portfolio equity, fetches S&P 500 data, and
-renders a comparison chart. Core behaviour remains unchanged; the code
-is simply reorganised and commented for clarity.
+"""Plot ChatGPT portfolio performance against a benchmark index.
+
+The script loads logged portfolio equity, fetches comparison index data,
+and renders a chart. Core behaviour remains unchanged; the code is simply
+reorganised and commented for clarity.
 """
 
 import argparse
@@ -44,23 +45,28 @@ def load_portfolio_details(
     return pd.concat([baseline_row, chatgpt_totals], ignore_index=True).sort_values("Date")
 
 
-def download_sp500(start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
-    """Download S&P 500 prices and normalise to a $100 baseline."""
-    sp500 = yf.download(
-        "^SPX", start=start_date, end=end_date + pd.Timedelta(days=1), progress=False
+def download_index(
+    ticker: str, start_date: pd.Timestamp, end_date: pd.Timestamp
+) -> pd.DataFrame:
+    """Download index prices and normalise to a $100 baseline."""
+    idx = yf.download(
+        ticker, start=start_date, end=end_date + pd.Timedelta(days=1), progress=False
     )
-    sp500 = cast(pd.DataFrame, sp500)
-    sp500 = sp500.reset_index()
-    if isinstance(sp500.columns, pd.MultiIndex):
-        sp500.columns = sp500.columns.get_level_values(0)
-    spx_27_price = 6173.07
-    scaling_factor = 100 / spx_27_price
-    sp500["SPX Value ($100 Invested)"] = sp500["Close"] * scaling_factor
-    return sp500
+    idx = cast(pd.DataFrame, idx)
+    idx = idx.reset_index()
+    if isinstance(idx.columns, pd.MultiIndex):
+        idx.columns = idx.columns.get_level_values(0)
+    initial_price = idx["Close"].iloc[0]
+    scaling_factor = 100 / initial_price
+    idx[f"{ticker} Value ($100 Invested)"] = idx["Close"] * scaling_factor
+    return idx
 
 
 def main(
-    baseline_equity: float, start_date: pd.Timestamp | None, end_date: pd.Timestamp | None
+    baseline_equity: float,
+    start_date: pd.Timestamp | None,
+    end_date: pd.Timestamp | None,
+    benchmark_index: str,
 ) -> None:
     """Generate and display the comparison graph."""
     chatgpt_totals = load_portfolio_details(baseline_equity, start_date)
@@ -70,7 +76,7 @@ def main(
     if end_date is None:
         end_date = chatgpt_totals["Date"].max()
 
-    sp500 = download_sp500(start_date, end_date)
+    benchmark_df = download_index(benchmark_index, start_date, end_date)
 
     plt.figure(figsize=(10, 6))
     plt.style.use("seaborn-v0_8-whitegrid")
@@ -83,9 +89,9 @@ def main(
         linewidth=2,
     )
     plt.plot(
-        sp500["Date"],
-        sp500["SPX Value ($100 Invested)"],
-        label="S&P 500 ($100 Invested)",
+        benchmark_df["Date"],
+        benchmark_df[f"{benchmark_index} Value ($100 Invested)"],
+        label=f"{benchmark_index} ($100 Invested)",
         marker="o",
         color="orange",
         linestyle="--",
@@ -94,7 +100,7 @@ def main(
 
     final_date = chatgpt_totals["Date"].iloc[-1]
     final_chatgpt = float(chatgpt_totals["Total Equity"].iloc[-1])
-    final_spx = sp500["SPX Value ($100 Invested)"].iloc[-1]
+    final_spx = benchmark_df[f"{benchmark_index} Value ($100 Invested)"].iloc[-1]
 
     plt.text(
         final_date, final_chatgpt + 0.3, f"+{final_chatgpt - baseline_equity:.1f}%", color="blue", fontsize=9
@@ -102,7 +108,7 @@ def main(
     plt.text(
         final_date, final_spx + 0.9, f"+{final_spx - 100:.1f}%", color="orange", fontsize=9
     )
-    plt.title("ChatGPT's Micro Cap Portfolio vs. S&P 500")
+    plt.title(f"ChatGPT's Micro Cap Portfolio vs. {benchmark_index}")
     plt.xlabel("Date")
     plt.ylabel("Value of $100 Investment")
     plt.xticks(rotation=15)
@@ -130,10 +136,16 @@ if __name__ == "__main__":
         type=str,
         help="End date for the chart (YYYY-MM-DD)",
     )
+    parser.add_argument(
+        "--benchmark-index",
+        type=str,
+        default="^SPX",
+        help="Ticker for comparison index (e.g. ^AXJO)",
+    )
     args = parser.parse_args()
 
     start = pd.to_datetime(args.start_date) if args.start_date else None
     end = pd.to_datetime(args.end_date) if args.end_date else None
 
-    main(args.baseline_equity, start, end)
+    main(args.baseline_equity, start, end, args.benchmark_index)
 

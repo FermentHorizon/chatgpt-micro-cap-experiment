@@ -3,14 +3,16 @@
 **Note: NONE OF THE PROMPTS ARE AUTOMATED, MANUAL UPDATES AND DEEP RESEARCH IS REQUIRED**
 ## Generate_Graph.py
 
-Pretty simple — it grabs the daily logs from `'chatgpt_portfolio_update.csv'` and then plots the results alongside S&P 500 returns (adjusted for $100).  
-To run, just make sure there's data in `'chatgpt_portfolio_update.csv'`, then run the script to generate the plot.
+Pretty simple — it grabs the daily logs from `'chatgpt_portfolio_update.csv'` and then plots the results alongside a benchmark index (default S&P 500, ticker `^SPX`).
+To run, just make sure there's data in `'chatgpt_portfolio_update.csv'`, then run the script to generate the plot. Use `--benchmark-index` to compare against another market such as the S&P/ASX 200 (`^AXJO`).
 
 ---
 
 ## Trading_Script.py
 
 The trading script tracks positions, logs trades, and prints daily results.
+
+Set `DEFAULT_SUFFIX` in the script to automatically append an exchange suffix to tickers. For example, `DEFAULT_SUFFIX = ".AX"` lets you enter `BHP` and have it logged as `BHP.AX` for the Australian Securities Exchange.
 
 ### 1. Daily Results
 
@@ -19,24 +21,17 @@ If it's not a trading day, it will use data from the previous day.
 It will also print the updated portfolio and cash. **If any manual trades were made, be sure to copy both and update the code.**
 By default the function also reports the Russell 2000 (`^RUT`), IWO, and XBI for comparison.
 
-To add additional tickers without modifying the portfolio:
-
-Before:
+You can override these benchmarks, the comparison index, and the risk-free rate:
 
 ```python
-# say we want data from SPY
-for stock in chatgpt_portfolio + [{"ticker": "^RUT"}] + [{"ticker": "IWO"}] + [{"ticker": "XBI"}]:
-    print(stock)
+daily_results(
+    chatgpt_portfolio,
+    cash,
+    benchmarks=["^AXJO"],
+    comparison_index="^AXJO",
+    rf_annual=0.04,
+)
 ```
-
-After:
-
-```python
-for stock in chatgpt_portfolio + [{"ticker": "^RUT"}] + [{"ticker": "IWO"}] + [{"ticker": "XBI"}] + [{"ticker": "SPY"}]:
-    print(stock)
-```
-That's it!
-
 ### Process Portfolio
 Handles stop-losses, updates `'chatgpt_portfolio_update.csv'`, and now prompts for manual trades before processing.
 
