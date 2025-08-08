@@ -13,6 +13,11 @@ import pandas as pd
 import yfinance as yf
 from typing import cast
 
+# Regional defaults
+# Set ``DEFAULT_SUFFIX`` to ".AX" when working with Australian tickers
+DEFAULT_SUFFIX = ""
+DEFAULT_BENCHMARKS = ["^RUT", "IWO", "XBI"]
+
 # Shared file locations
 DATA_DIR = "Start Your Own"
 PORTFOLIO_CSV = f"{DATA_DIR}/chatgpt_portfolio_update.csv"
@@ -20,6 +25,13 @@ TRADE_LOG_CSV = f"{DATA_DIR}/chatgpt_trade_log.csv"
 
 # Today's date reused across logs
 today = datetime.today().strftime("%Y-%m-%d")
+
+
+def apply_suffix(ticker: str) -> str:
+    """Append ``DEFAULT_SUFFIX`` when the ticker lacks an exchange suffix."""
+    if DEFAULT_SUFFIX and "." not in ticker and not ticker.startswith("^"):
+        return f"{ticker}{DEFAULT_SUFFIX}"
+    return ticker
 
 
 def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> pd.DataFrame:
@@ -41,7 +53,7 @@ def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> pd.DataF
         ).strip().lower()
         if action == "b":
             try:
-                ticker = input("Enter ticker symbol: ").strip().upper()
+                ticker = apply_suffix(input("Enter ticker symbol: ").strip().upper())
                 shares = float(input("Enter number of shares: "))
                 buy_price = float(input("Enter buy price: "))
                 stop_loss = float(input("Enter stop loss: "))
@@ -56,7 +68,7 @@ def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> pd.DataF
             continue
         if action == "s":
             try:
-                ticker = input("Enter ticker symbol: ").strip().upper()
+                ticker = apply_suffix(input("Enter ticker symbol: ").strip().upper())
                 shares = float(input("Enter number of shares to sell: "))
                 sell_price = float(input("Enter sell price: "))
                 if shares <= 0 or sell_price <= 0:
@@ -71,7 +83,7 @@ def process_portfolio(portfolio: pd.DataFrame, starting_cash: float) -> pd.DataF
         break
 
     for _, stock in portfolio.iterrows():
-        ticker = stock["ticker"]
+        ticker = apply_suffix(stock["ticker"])
         shares = int(stock["shares"])
         cost = stock["buy_price"]
         stop = stock["stop_loss"]
@@ -297,12 +309,20 @@ def log_manual_sell(
     return cash, chatgpt_portfolio
 
 
-def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
+def daily_results(
+    chatgpt_portfolio: pd.DataFrame,
+    cash: float,
+    benchmarks: list[str] | None = None,
+    rf_annual: float = 0.045,
+    comparison_index: str = "^SPX",
+) -> None:
     """Print daily price updates and performance metrics."""
     if isinstance(chatgpt_portfolio, pd.DataFrame):
         portfolio_dict = chatgpt_portfolio.to_dict(orient="records")
+    if benchmarks is None:
+        benchmarks = DEFAULT_BENCHMARKS
     print(f"prices and updates for {today}")
-    for stock in portfolio_dict + [{"ticker": "^RUT"}] + [{"ticker": "IWO"}] + [{"ticker": "XBI"}]:
+    for stock in portfolio_dict + [{"ticker": b} for b in benchmarks]:
         ticker = stock["ticker"]
         try:
             data = yf.download(ticker, period="2d", progress=False)
@@ -338,8 +358,7 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
     # Number of total trading days
     n_days = len(chatgpt_totals)
 
-    # Risk-free return over total trading period (assuming 4.5% risk-free rate)
-    rf_annual = 0.045
+    # Risk-free return over total trading period
     rf_period = (1 + rf_annual) ** (n_days / 252) - 1
 
     # Standard deviation of daily returns
@@ -355,17 +374,24 @@ def daily_results(chatgpt_portfolio: pd.DataFrame, cash: float) -> None:
     print(f"Total Sharpe Ratio over {n_days} days: {sharpe_total:.4f}")
     print(f"Total Sortino Ratio over {n_days} days: {sortino_total:.4f}")
     print(f"Latest ChatGPT Equity: ${final_equity:.2f}")
-    # Get S&P 500 data
-    spx = yf.download("^SPX", start="2025-06-27", end=final_date + pd.Timedelta(days=1), progress=False)
-    spx = cast(pd.DataFrame, spx)
-    spx = spx.reset_index()
+
+    # Get comparison index data
+    start_date = chatgpt_totals["Date"].min()
+    index_df = yf.download(
+        comparison_index,
+        start=start_date,
+        end=final_date + pd.Timedelta(days=1),
+        progress=False,
+    )
+    index_df = cast(pd.DataFrame, index_df)
+    index_df = index_df.reset_index()
 
     # Normalize to $100
-    initial_price = spx["Close"].iloc[0].item()
-    price_now = spx["Close"].iloc[-1].item()
+    initial_price = index_df["Close"].iloc[0].item()
+    price_now = index_df["Close"].iloc[-1].item()
     scaling_factor = 100 / initial_price
-    spx_value = price_now * scaling_factor
-    print(f"$100 Invested in the S&P 500: ${spx_value:.2f}")
+    index_value = price_now * scaling_factor
+    print(f"$100 Invested in {comparison_index}: ${index_value:.2f}")
     print(f"today's portfolio: {chatgpt_portfolio}")
     print(f"cash balance: {cash}")
 
